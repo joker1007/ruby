@@ -1031,7 +1031,7 @@ invoke_block(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE self, cons
 }
 
 static VALUE
-invoke_bmethod(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE self, const struct rb_captured_block *captured, const rb_callable_method_entry_t *me, VALUE type, int opt_pc)
+invoke_bmethod(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE self, int argc, const VALUE *argv, const struct rb_captured_block *captured, const rb_callable_method_entry_t *me, VALUE type, int opt_pc)
 {
     /* bmethod */
     int arg_size = iseq->body->param.size;
@@ -1049,12 +1049,18 @@ invoke_bmethod(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE self, co
 		  iseq->body->stack_max);
 
     RUBY_DTRACE_METHOD_ENTRY_HOOK(ec, me->owner, me->def->original_id);
-    EXEC_EVENT_HOOK(ec, RUBY_EVENT_CALL, self, me->def->original_id, me->called_id, me->owner, Qnil);
+
+    VALUE data = Qundef;
+    rb_hook_list_t *global_hooks = rb_vm_global_hooks(ec);
+    if (UNLIKELY(global_hooks->events & (RUBY_EVENT_CALL))) {
+	data = rb_ary_new_from_values(argc, argv);
+    }
+    EXEC_EVENT_HOOK(ec, RUBY_EVENT_CALL, self, me->def->original_id, me->called_id, me->owner, data);
 
     if (UNLIKELY((hooks = me->def->body.bmethod.hooks) != NULL) &&
         hooks->events & RUBY_EVENT_CALL) {
         rb_exec_event_hook_orig(ec, hooks, RUBY_EVENT_CALL, self,
-                                me->def->original_id, me->called_id, me->owner, Qnil, FALSE);
+                                me->def->original_id, me->called_id, me->owner, data, FALSE);
     }
     VM_ENV_FLAGS_SET(ec->cfp->ep, VM_FRAME_FLAG_FINISH);
     ret = vm_exec(ec, TRUE);
@@ -1102,7 +1108,7 @@ invoke_iseq_block_from_c(rb_execution_context_t *ec, const struct rb_captured_bl
 	return invoke_block(ec, iseq, self, captured, cref, type, opt_pc);
     }
     else {
-	return invoke_bmethod(ec, iseq, self, captured, me, type, opt_pc);
+	return invoke_bmethod(ec, iseq, self, argc, argv, captured, me, type, opt_pc);
     }
 }
 

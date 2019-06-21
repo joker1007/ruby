@@ -2200,7 +2200,13 @@ vm_call_cfunc_with_frame(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp
     int argc = calling->argc;
 
     RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, me->owner, me->def->original_id);
-    EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, me->def->original_id, ci->mid, me->owner, Qundef);
+
+    VALUE argv = Qundef;
+    rb_hook_list_t *global_hooks = rb_vm_global_hooks(ec);
+    if (UNLIKELY(global_hooks->events & (RUBY_EVENT_C_CALL))) {
+	argv = rb_ary_new_from_values(argc, reg_cfp->sp - argc);
+    }
+    EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, me->def->original_id, ci->mid, me->owner, argv);
 
     vm_push_frame(ec, NULL, VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL, recv,
 		  block_handler, (VALUE)me,
@@ -4336,6 +4342,36 @@ vm_trace_hook(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VAL
     VALUE self = GET_SELF();
 
     VM_ASSERT(rb_popcount64((uint64_t)event) == 1);
+
+    if (event & (RUBY_EVENT_CALL | RUBY_EVENT_B_CALL)) {
+        const rb_iseq_t *iseq = reg_cfp->iseq;
+        int local_table_size = iseq->body->local_table_size;
+        int not_keyword_arg_size = iseq->body->param.lead_num + iseq->body->param.opt_num + iseq->body->param.flags.has_rest + iseq->body->param.post_num;
+
+        int keyword_size = 0;
+        int keyword_rest = 0;
+        if (iseq->body->param.keyword) {
+            keyword_size = iseq->body->param.keyword->num;
+            keyword_rest = iseq->body->param.keyword->rest_start;
+        }
+
+        val = rb_ary_new_from_values(not_keyword_arg_size, reg_cfp->ep - (local_table_size + 2));
+
+        if (keyword_size > 0) {
+            const VALUE *keyword_args = reg_cfp->ep - (local_table_size + 2) + not_keyword_arg_size;
+            VALUE hash = rb_hash_new();
+            int i;
+            for (i=0; i<keyword_size; i++) {
+                rb_hash_aset(hash, rb_id2sym(*(iseq->body->param.keyword->table + i)), *(keyword_args + i));
+            }
+            rb_ary_push(val, hash);
+        }
+
+        if (keyword_rest > 0) {
+            const VALUE *keyword_rest = reg_cfp->ep - (local_table_size + 2) + not_keyword_arg_size + keyword_size + 1;
+            rb_ary_push(val, *keyword_rest);
+        }
+    }
 
     if (event & global_hooks->events) {
         /* increment PC because source line is calculated with PC-1 */

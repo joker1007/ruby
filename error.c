@@ -1165,7 +1165,13 @@ rb_get_backtrace(VALUE exc)
 	rb_execution_context_t *ec = GET_EC();
 	if (NIL_P(exc))
 	    return Qnil;
-	EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, exc, mid, mid, klass, Qundef);
+
+	rb_hook_list_t *global_hooks = rb_vm_global_hooks(ec);
+	VALUE argv = Qundef;
+	if (UNLIKELY(global_hooks->events & (RUBY_EVENT_C_CALL))) {
+	argv = rb_ary_new();
+    }
+	EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, exc, mid, mid, klass, argv);
 	info = exc_backtrace(exc);
 	EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_RETURN, exc, mid, mid, klass, info);
     }

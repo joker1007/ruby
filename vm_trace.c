@@ -933,6 +933,21 @@ rb_tracearg_self(rb_trace_arg_t *trace_arg)
 }
 
 VALUE
+rb_tracearg_arguments(rb_trace_arg_t *trace_arg)
+{
+    if (trace_arg->event & (RUBY_EVENT_C_CALL | RUBY_EVENT_CALL | RUBY_EVENT_B_CALL)) {
+	/* ok */
+    }
+    else {
+	rb_raise(rb_eRuntimeError, "not supported by this event");
+    }
+    if (trace_arg->data == Qundef) {
+        rb_bug("rb_tracearg_arguments: unreachable");
+    }
+    return trace_arg->data;
+}
+
+VALUE
 rb_tracearg_return_value(rb_trace_arg_t *trace_arg)
 {
     if (trace_arg->event & (RUBY_EVENT_RETURN | RUBY_EVENT_C_RETURN | RUBY_EVENT_B_RETURN)) {
@@ -1144,6 +1159,15 @@ static VALUE
 tracepoint_attr_self(VALUE tpval)
 {
     return rb_tracearg_self(get_trace_arg());
+}
+
+/*
+ *  Arguments from +:call+, +:c_call+ event
+ */
+static VALUE
+tracepoint_attr_arguments(VALUE tpval)
+{
+    return rb_tracearg_arguments(get_trace_arg());
 }
 
 /*
@@ -1796,6 +1820,7 @@ Init_vm_trace(void)
     rb_define_method(rb_cTracePoint, "defined_class", tracepoint_attr_defined_class, 0);
     rb_define_method(rb_cTracePoint, "binding", tracepoint_attr_binding, 0);
     rb_define_method(rb_cTracePoint, "self", tracepoint_attr_self, 0);
+    rb_define_method(rb_cTracePoint, "arguments", tracepoint_attr_arguments, 0);
     rb_define_method(rb_cTracePoint, "return_value", tracepoint_attr_return_value, 0);
     rb_define_method(rb_cTracePoint, "raised_exception", tracepoint_attr_raised_exception, 0);
     rb_define_method(rb_cTracePoint, "eval_script", tracepoint_attr_eval_script, 0);
